@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { classifyPointCloud, classifyFromImage } from '../utils/limbClassifier';
 
 type LiDARData =
   | { type: 'image'; width: number; height: number; pixels: Uint8ClampedArray }
@@ -7,6 +8,7 @@ type LiDARData =
 export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [classification, setClassification] = useState<string | null>(null);
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     setError(null);
@@ -38,7 +40,12 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
         URL.revokeObjectURL(url);
         return;
       }
-      cb({ type: 'image', width: canvas.width, height: canvas.height, pixels: imageData.data });
+      const data = { type: 'image', width: canvas.width, height: canvas.height, pixels: imageData.data } as const;
+      cb(data);
+
+      // Try a mild heuristic classification for images (low-confidence)
+      const imgCls = classifyFromImage(canvas.width, canvas.height);
+      setClassification(`${imgCls.label} — ${Math.round(imgCls.confidence * 100)}%`);
       URL.revokeObjectURL(url);
     };
     img.onerror = () => URL.revokeObjectURL(url);
@@ -56,6 +63,8 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
         return;
       }
       cb({ type: 'pointcloud', points });
+      const cls = classifyPointCloud(points);
+      setClassification(`${cls.label} — ${Math.round(cls.confidence * 100)}%`);
       return;
     }
     if (txtTrim.toLowerCase().startsWith('# .pcd') || /pcd\s+v?\d/.test(txtTrim.slice(0, 200).toLowerCase())) {
@@ -65,6 +74,8 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
         return;
       }
       cb({ type: 'pointcloud', points });
+      const cls = classifyPointCloud(points);
+      setClassification(`${cls.label} — ${Math.round(cls.confidence * 100)}%`);
       return;
     }
     // fallback: parse lines of three numbers (x y z)
@@ -81,6 +92,8 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
       return;
     }
     cb({ type: 'pointcloud', points: pts });
+    const cls = classifyPointCloud(pts);
+    setClassification(`${cls.label} — ${Math.round(cls.confidence * 100)}%`);
   }
 
   function parsePlyAscii(text: string) {
@@ -149,6 +162,7 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
         <input type="file" ref={fileRef} onChange={handleFile} />
         <small style={{ color: '#666' }}>Supports PNG/JPG images or ASCII PLY/PCD/XYZ</small>
         {error && <div style={{ color: 'crimson', marginTop: 8 }}>{error}</div>}
+        {classification && <div style={{ color: '#1177bb', marginTop: 8 }}>Guess: {classification}</div>}
       </div>
     </div>
   );
