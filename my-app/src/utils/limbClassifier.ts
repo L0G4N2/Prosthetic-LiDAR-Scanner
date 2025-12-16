@@ -1,6 +1,8 @@
-// Lightweight heuristic limb classifier for point-clouds
-// Returns a best-guess label and confidence (0..1). This is a heuristic
-// and not a trained model. For real use, replace with a trained classifier.
+// Limb Classification Utility
+// Provides heuristic-based classification of point-clouds to identify human limb types
+// Uses bounding box dimensions and point density to guess limb type (finger, hand, forearm, etc.)
+// Note: This is NOT a trained ML model and provides low-confidence predictions.
+// For production use, integrate a trained classifier (e.g., PointNet or similar)
 
 export type LimbClass = {
   label: string;
@@ -9,9 +11,15 @@ export type LimbClass = {
   points: number;
 };
 
+/**
+ * Classify a point-cloud by analyzing its bounding box and geometry
+ * Heuristics: assumes limbs are roughly elongated cylinders
+ * Returns a best-guess label and confidence score (0..1)
+ */
 export function classifyPointCloud(points: Array<[number, number, number]>): LimbClass {
   if (!points || points.length === 0) return { label: 'unknown', confidence: 0, points: 0 };
 
+  // Find bounding box
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for (const [x, y, z] of points) {
@@ -21,15 +29,16 @@ export function classifyPointCloud(points: Array<[number, number, number]>): Lim
   }
   const dx = maxX - minX; const dy = maxY - minY; const dz = maxZ - minZ;
 
-  // Try to detect units: if longest dimension is very large, assume mm and convert to meters
+  // Try to detect units: if largest dimension > 5, likely millimeters; convert to meters
   const longest = Math.max(dx, dy, dz);
   let scale = 1; // assume meters
-  if (longest > 5) scale = 1000; // likely values are in millimeters
+  if (longest > 5) scale = 1000; // likely millimeters
   const lengthM = longest / scale;
   const widthM = Math.min(dx, dy, dz) / scale;
   const depthM = [dx, dy, dz].sort((a,b)=>a-b)[1] / scale;
 
-  // Heuristic thresholds (meters)
+  // Classify based on length (in meters)
+  // Typical human limb sizes: fingers ~2-5cm, hand ~7-8cm, forearm ~25cm, etc.
   let label = 'unknown';
   let confidence = 0.0;
 
@@ -39,14 +48,14 @@ export function classifyPointCloud(points: Array<[number, number, number]>): Lim
   else if (lengthM < 0.9) { label = 'upper arm'; confidence = 0.6; }
   else { label = 'leg'; confidence = 0.7; }
 
-  // Increase confidence if width/length ratio looks limb-like (thin long)
+  // Boost confidence if width/length ratio suggests a limb (thin and long)
   if (lengthM > 0) {
     const ratio = widthM / lengthM;
-    if (ratio < 0.25) confidence = Math.min(1, confidence + 0.15);
-    if (ratio > 0.6) confidence = Math.min(1, confidence - 0.2);
+    if (ratio < 0.25) confidence = Math.min(1, confidence + 0.15); // limb-like
+    if (ratio > 0.6) confidence = Math.min(1, confidence - 0.2); // too blobby
   }
 
-  // Slight boost for point density
+  // Slight confidence boost for higher point density
   const densityBoost = Math.min(0.15, Math.log10(Math.max(1, points.length)) / 10);
   confidence = Math.min(1, confidence + densityBoost);
 
@@ -58,8 +67,10 @@ export function classifyPointCloud(points: Array<[number, number, number]>): Lim
   };
 }
 
+/**
+ * Classify from image dimensions (very low confidence fallback)
+ * Without depth calibration, image-based predictions are unreliable
+ */
 export function classifyFromImage(width: number, height: number): LimbClass {
-  // Without depth calibration, image-based guesses are unreliable.
-  // Provide a conservative fallback that suggests converting to a point-cloud.
   return { label: 'unknown (image)', confidence: 0.2, bboxMeters: { length: width, width: height, depth: 0 }, points: 0 };
 }
