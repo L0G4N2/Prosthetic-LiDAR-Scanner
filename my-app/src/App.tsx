@@ -5,6 +5,7 @@ import './App.css'
 import Scene from './components/Scene'
 import LiDARLoader from './components/LiDARLoader'
 import type { LiDARData } from './components/LiDARLoader'
+import { exportPointCloudToOBJ, exportPointCloudToSTL, exportPointCloudToPLY } from './utils/exporters'
 
 function App() {
   const [count, setCount] = useState(0)
@@ -22,12 +23,38 @@ function App() {
     }
   }
 
+  function exportPointCloud(format: 'obj' | 'stl' | 'ply') {
+    if (!lidarData || lidarData.type !== 'pointcloud') {
+      alert('No point-cloud loaded. Please upload a point-cloud file first.')
+      return
+    }
+    const timestamp = new Date().toISOString().slice(0, 10)
+    const filename = `limb_${timestamp}.${format}`
+    if (format === 'obj') exportPointCloudToOBJ(lidarData.points, filename)
+    else if (format === 'stl') exportPointCloudToSTL(lidarData.points, filename)
+    else if (format === 'ply') exportPointCloudToPLY(lidarData.points, filename)
+  }
+
   return (
     <>
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
         <div style={{ minWidth: 320 }}>
           <LiDARLoader onLoad={handleLiDARLoad} />
           {lidarSummary && <div style={{ marginTop: 8, color: '#333' }}>{lidarSummary}</div>}
+          {lidarData && lidarData.type === 'pointcloud' && (
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <strong style={{ color: '#333' }}>Export for 3D Printing:</strong>
+              <button onClick={() => exportPointCloud('stl')} style={{ padding: '6px 12px', cursor: 'pointer' }}>
+                📥 Download STL
+              </button>
+              <button onClick={() => exportPointCloud('obj')} style={{ padding: '6px 12px', cursor: 'pointer' }}>
+                📥 Download OBJ
+              </button>
+              <button onClick={() => exportPointCloud('ply')} style={{ padding: '6px 12px', cursor: 'pointer' }}>
+                📥 Download PLY
+              </button>
+            </div>
+          )}
           <div style={{ marginTop: 12 }}>
             <a href="https://vite.dev" target="_blank">
               <img src={viteLogo} className="logo" alt="Vite logo" />
