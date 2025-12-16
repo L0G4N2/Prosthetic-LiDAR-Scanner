@@ -9,8 +9,10 @@ import type { LiDARData } from './components/LiDARLoader'
 function App() {
   const [count, setCount] = useState(0)
   const [lidarSummary, setLidarSummary] = useState<string | null>(null)
+  const [lidarData, setLidarData] = useState<LiDARData | null>(null)
 
   function handleLiDARLoad(data: LiDARData) {
+    setLidarData(data)
     if (data.type === 'image') {
       setLidarSummary(`Image ${data.width}x${data.height}`)
       console.log('LiDAR image loaded', data.width, data.height, data.pixels.length)
@@ -18,7 +20,6 @@ function App() {
       setLidarSummary(`Pointcloud ${data.points.length} points`)
       console.log('LiDAR pointcloud loaded', data.points.length, data.points.slice(0,5))
     }
-    // TODO: forward data to Scene for rendering
   }
 
   return (
@@ -38,7 +39,7 @@ function App() {
         </div>
 
         <div>
-          <Scene />
+          <Scene lidarData={lidarData} />
         </div>
       </div>
 
