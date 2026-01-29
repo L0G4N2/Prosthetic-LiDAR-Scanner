@@ -4,6 +4,8 @@
 // Validates parsed data and performs limb classification on successful load
 
 import React, { useRef, useState } from 'react';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { classifyPointCloud, classifyFromImage } from '../utils/limbClassifier';
 
 // Type definition for parsed LiDAR data
@@ -31,8 +33,10 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
       readImageAsDepth(f, onLoad);
     } else if (name.endsWith('.ply') || name.endsWith('.pcd') || name.endsWith('.xyz') || name.endsWith('.txt')) {
       readPointCloudFile(f, onLoad);
+    } else if (name.endsWith('.glb') || name.endsWith('.gltf')) {
+      readGLBFile(f, onLoad);
     } else {
-      setError('Unrecognized file extension. Please select a PNG/JPG image or ASCII point-cloud (.ply/.pcd/.xyz).');
+      setError('Unrecognized file extension. Please select a PNG/JPG image, GLB/GLTF model, or ASCII point-cloud (.ply/.pcd/.xyz).');
     }
   }
 
@@ -188,10 +192,49 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
     return pts;
   }
 
+  /**
+   * Parse GLB/GLTF file
+   * Extracts vertex positions from all meshes in the model
+   */
+  async function readGLBFile(file: File, cb: (d: LiDARData) => void) {
+    const arrayBuffer = await file.arrayBuffer();
+    const loader = new GLTFLoader();
+    
+    loader.parse(arrayBuffer, '', (gltf) => {
+      const pts: Array<[number, number, number]> = [];
+      
+      // Traverse all meshes in the scene
+      gltf.scene.traverse((node) => {
+        if (node instanceof THREE.Mesh && node.geometry) {
+          const geometry = node.geometry;
+          const positions = geometry.getAttribute('position');
+          
+          if (positions) {
+            const posArray = positions.array as Float32Array;
+            for (let i = 0; i < posArray.length; i += 3) {
+              pts.push([posArray[i], posArray[i + 1], posArray[i + 2]]);
+            }
+          }
+        }
+      });
+      
+      if (pts.length === 0) {
+        setError('GLB file loaded but contains no vertex data.');
+        return;
+      }
+      
+      cb({ type: 'pointcloud', points: pts });
+      const cls = classifyPointCloud(pts);
+      setClassification(`${cls.label} — ${Math.round(cls.confidence * 100)}%`);
+    }, (error) => {
+      setError(`Failed to parse GLB file: ${error.message}`);
+    });
+  }
+
   return (
     <div className="file-input-wrapper">
       <input type="file" ref={fileRef} onChange={handleFile} />
-      <small className="file-input-label">Supports PNG/JPG images or ASCII PLY/PCD/XYZ</small>
+      <small className="file-input-label">Supports PNG/JPG images, GLB/GLTF models, or ASCII PLY/PCD/XYZ</small>
       {error && <div className="info-box error">{error}</div>}
       {classification && <div className="info-box classification">Guess: {classification}</div>}
     </div>

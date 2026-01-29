@@ -1,5 +1,6 @@
 {
   "name": "my-app",
+  "homepage": "https://L0G4N2.github.io/Prosthetic-LiDAR-Scanner",
   "private": true,
   "version": "0.0.0",
   "type": "module",

@@ -54,13 +54,13 @@ function App() {
       {/* Left Sidebar: Controls and Info */}
       <div className="sidebar">
         <div className="sidebar-header">
-          <h1>🔬 LiDAR Scanner</h1>
+          <h1>LiDAR Scanner</h1>
           <p>Convert point-clouds to 3D-printable models</p>
         </div>
 
         {/* File upload section */}
         <div className="section">
-          <div className="section-title">📁 Load Scan</div>
+          <div className="section-title">Load Scan</div>
           <div className="loader-container">
             <LiDARLoader onLoad={handleLiDARLoad} />
           </div>
@@ -69,7 +69,7 @@ function App() {
         {/* Display scan info after successful upload */}
         {lidarSummary && (
           <div className="section">
-            <div className="section-title">📊 Scan Info</div>
+            <div className="section-title">Scan Info</div>
             <div className="info-box success">{lidarSummary}</div>
           </div>
         )}
@@ -77,16 +77,16 @@ function App() {
         {/* Export buttons visible only for point-cloud data */}
         {lidarData && lidarData.type === 'pointcloud' && (
           <div className="section">
-            <div className="section-title">💾 Export Model</div>
+            <div className="section-title">Export Model</div>
             <div className="export-buttons">
               <button onClick={() => exportPointCloud('stl')}>
-                📥 Download STL (3D Print)
+                Download STL (3D Print)
               </button>
               <button onClick={() => exportPointCloud('obj')}>
-                📥 Download OBJ (Editing)
+                Download OBJ (Editing)
               </button>
               <button onClick={() => exportPointCloud('ply')}>
-                📥 Download PLY (Analysis)
+                Download PLY (Analysis)
               </button>
             </div>
           </div>
@@ -96,7 +96,7 @@ function App() {
       {/* Right Viewer: 3D Rendering Canvas */}
       <div className="viewer">
         <div className="viewer-header">
-          <h2>🎬 3D Preview</h2>
+          <h2>3D Preview</h2>
         </div>
         {/* Scene component renders the 3D model (point-cloud or depth image) */}
         <div className="viewer-content">
