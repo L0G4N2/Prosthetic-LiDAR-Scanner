@@ -1,12 +1,12 @@
 // LiDAR File Loader Component
 // Accepts user file uploads and parses LiDAR data in multiple formats
 // Supports: PNG/JPG images (as depth maps) and ASCII point-cloud files (PLY, PCD, XYZ)
-// Validates parsed data and performs limb classification on successful load
+// Validates parsed data; classification is handled by the parent component
 
 import React, { useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
-import { classifyPointCloud, classifyFromImage } from '../utils/limbClassifier';
+// classification now handled in App; loader simply parses data
 
 // Type definition for parsed LiDAR data
 // Either a depth image (RGBA pixel array) or a point-cloud (3D coordinates)
@@ -18,8 +18,6 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
   const fileRef = useRef<HTMLInputElement | null>(null);
   // Error message displayed when file parsing or validation fails
   const [error, setError] = useState<string | null>(null);
-  // Classification result (limb type + confidence) displayed after successful parse
-  const [classification, setClassification] = useState<string | null>(null);
 
   /**
    * Main file handler: routes uploaded file to appropriate parser based on extension
@@ -63,9 +61,7 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
       const data = { type: 'image', width: canvas.width, height: canvas.height, pixels: imageData.data } as const;
       cb(data);
 
-      // Classify image (low confidence since depth is unknown)
-      const imgCls = classifyFromImage(canvas.width, canvas.height);
-      setClassification(`${imgCls.label} — ${Math.round(imgCls.confidence * 100)}%`);
+      // classification now occurs in parent component; just revoke URL
       URL.revokeObjectURL(url);
     };
     img.onerror = () => URL.revokeObjectURL(url);
@@ -88,8 +84,6 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
         return;
       }
       cb({ type: 'pointcloud', points });
-      const cls = classifyPointCloud(points);
-      setClassification(`${cls.label} — ${Math.round(cls.confidence * 100)}%`);
       return;
     }
     
@@ -101,8 +95,6 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
         return;
       }
       cb({ type: 'pointcloud', points });
-      const cls = classifyPointCloud(points);
-      setClassification(`${cls.label} — ${Math.round(cls.confidence * 100)}%`);
       return;
     }
     
@@ -120,8 +112,6 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
       return;
     }
     cb({ type: 'pointcloud', points: pts });
-    const cls = classifyPointCloud(pts);
-    setClassification(`${cls.label} — ${Math.round(cls.confidence * 100)}%`);
   }
 
   /**
@@ -224,8 +214,6 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
       }
       
       cb({ type: 'pointcloud', points: pts });
-      const cls = classifyPointCloud(pts);
-      setClassification(`${cls.label} — ${Math.round(cls.confidence * 100)}%`);
     }, (error) => {
       setError(`Failed to parse GLB file: ${error.message}`);
     });
@@ -236,7 +224,6 @@ export default function LiDARLoader({ onLoad }: { onLoad: (d: LiDARData) => void
       <input type="file" ref={fileRef} onChange={handleFile} />
       <small className="file-input-label">Supports PNG/JPG images, GLB/GLTF models, or ASCII PLY/PCD/XYZ</small>
       {error && <div className="info-box error">{error}</div>}
-      {classification && <div className="info-box classification">Guess: {classification}</div>}
     </div>
   );
 }
