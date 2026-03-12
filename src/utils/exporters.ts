@@ -5,6 +5,15 @@
 // - PLY: ASCII format, preserves point cloud structure
 // - STL: Binary format, standard for 3D printing (slicers: Cura, PrusaSlicer, etc.)
 
+import * as THREE from 'three';
+import * as ADDON from 'three/examples/jsm/Addons.js';
+
+// const gltfexporter = new ADDON.GLTFExporter();
+// const objExporter = new ADDON.OBJExporter();
+const stlExporter = new ADDON.STLExporter();
+
+
+
 /**
  * Export point-cloud to OBJ format (vertices only)
  * @param points - Array of [x, y, z] coordinates
@@ -61,9 +70,51 @@ export function exportPointCloudToSTL(
   points: Array<[number, number, number]>,
   filename = 'limb.stl'
 ): void {
-  // Generate mesh triangles by connecting nearby points
-  const triangles = createSimpleMeshFromPoints(points)
-  exportTrianglesToSTL(triangles, filename)
+  if (points.length < 3) {
+    alert('Need at least 3 points to create an STL mesh.');
+    return;
+  }
+
+  // build a simple triangulated surface
+  const triangles = createSimpleMeshFromPoints(points);
+
+  const geom = new THREE.BufferGeometry();
+  const verts: number[] = [];
+  const normals: number[] = [];
+
+  for (const tri of triangles) {
+    const [a, b, c] = tri;
+    verts.push(...a, ...b, ...c);
+
+    // compute face normal
+    const vA = new THREE.Vector3(...a);
+    const vB = new THREE.Vector3(...b);
+    const vC = new THREE.Vector3(...c);
+    const normal = new THREE.Vector3()
+      .subVectors(vB, vA)
+      .cross(new THREE.Vector3().subVectors(vC, vA))
+      .normalize();
+    normals.push(...normal.toArray(), ...normal.toArray(), ...normal.toArray());
+  }
+
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+
+  const mesh = new THREE.Mesh(geom, new THREE.MeshNormalMaterial());
+
+  const exporter = new ADDON.STLExporter();
+  const buffer = exporter.parse(mesh, { binary: true }) as ArrayBuffer;
+
+  // directly create blob and download
+  const blob = new Blob([buffer], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 /**
@@ -211,14 +262,18 @@ function computeNormal(
  * Generic file download utility
  * Creates a blob, generates a download link, and triggers browser download
  */
-function downloadFile(content: string, filename: string, mimeType: string): void {
-  const blob = new Blob([content], { type: mimeType })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
+function downloadFile(
+  content: string | ArrayBuffer,
+  filename: string,
+  mimeType: string
+): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
