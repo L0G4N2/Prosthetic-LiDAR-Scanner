@@ -4,13 +4,24 @@
 // Provides interactive 3D controls via OrbitControls (rotate, zoom, pan with mouse)
 
 import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
+import { OrbitControls, Text } from '@react-three/drei'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import type { LiDARData } from './LiDARLoader'
 
+interface CropBox {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
+}
+
 interface PointCloudProps {
   data: LiDARData | null;
+  crop?: CropBox;
+  fullBounds?: CropBox | null;
 }
 
 /**
@@ -19,31 +30,36 @@ interface PointCloudProps {
  * - Centers the points around origin for better interaction
  * - Auto-rotates for visual feedback
  */
-function PointCloudViewer({ data }: PointCloudProps) {
-  const pointsRef = useRef<THREE.Points>(null)
+function PointCloudViewer({ data, crop, fullBounds }: PointCloudProps) {
+  const groupRef = useRef<THREE.Group>(null)
+  // const pointsRef = useRef<THREE.Points>(null) // no longer used
 
   // Memoize geometry creation to avoid rebuilding on every render
-  const geometry = useMemo(() => {
-    if (!data || data.type !== 'pointcloud') return null
+  const { geometry, rawBounds } = useMemo(() => {
+    if (!data || data.type !== 'pointcloud') return { geometry: null, rawBounds: null }
 
     const geom = new THREE.BufferGeometry()
-    // Convert array of [x, y, z] points to flat Float32Array for GPU
     const positions = new Float32Array(data.points.flat())
     geom.setAttribute('position', new THREE.BufferAttribute(positions, 3))
 
-    // Compute bounding box and center the point-cloud at origin
-    geom.computeBoundingBox()
-    const center = new THREE.Vector3()
-    geom.boundingBox?.getCenter(center)
-    geom.translate(-center.x, -center.y, -center.z)
+    // compute extents (not used for centering anymore)
+    let minX = Infinity, minY = Infinity, minZ = Infinity
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+    data.points.forEach(([x,y,z])=>{
+      if(x<minX) minX=x; if(x>maxX) maxX=x;
+      if(y<minY) minY=y; if(y>maxY) maxY=y;
+      if(z<minZ) minZ=z; if(z>maxZ) maxZ=z;
+    });
 
-    return geom
+    geom.computeBoundingBox()
+
+    return { geometry: geom, rawBounds: { minX, maxX, minY, maxY, minZ, maxZ } }
   }, [data])
 
-  // Animate rotation for visual appeal
+  // Animate rotation for visual appeal (entire group including grid)
   useFrame(() => {
-    if (pointsRef.current) {
-      pointsRef.current.rotation.y += 0.001
+    if (groupRef.current) {
+      groupRef.current.rotation.y += 0.001
     }
   })
 
@@ -51,11 +67,133 @@ function PointCloudViewer({ data }: PointCloudProps) {
     return null
   }
 
+  // compute preview meshes using raw coordinates directly
+  let cropMesh = null
+  if (crop && rawBounds) {
+    const hasCrop =
+      crop.minX < crop.maxX ||
+      crop.minY < crop.maxY ||
+      crop.minZ < crop.maxZ
+    if (hasCrop) {
+      // use crop values if they define any non-degenerate interval;
+      // if any axis is degenerate, extend to rawBounds for that axis
+      const minX = crop.minX < crop.maxX ? crop.minX : rawBounds.minX
+      const maxX = crop.minX < crop.maxX ? crop.maxX : rawBounds.maxX
+      const minY = crop.minY < crop.maxY ? crop.minY : rawBounds.minY
+      const maxY = crop.minY < crop.maxY ? crop.maxY : rawBounds.maxY
+      const minZ = crop.minZ < crop.maxZ ? crop.minZ : rawBounds.minZ
+      const maxZ = crop.minZ < crop.maxZ ? crop.maxZ : rawBounds.maxZ
+
+      const w = maxX - minX
+      const h = maxY - minY
+      const d = maxZ - minZ
+      const fcenter = new THREE.Vector3((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2)
+      cropMesh = (
+        <mesh position={[fcenter.x, fcenter.y, fcenter.z]}>
+          <boxGeometry args={[w, h, d]} />
+          <meshBasicMaterial color="red" wireframe opacity={0.5} transparent />
+        </mesh>
+      )
+    }
+  }
+
+  // full bounds wireframe (use provided fullBounds if present to show original dataset)
+  let fullBox = null
+  const boundsToUse = fullBounds || rawBounds
+  if (boundsToUse) {
+    const fw = boundsToUse.maxX - boundsToUse.minX
+    const fh = boundsToUse.maxY - boundsToUse.minY
+    const fd = boundsToUse.maxZ - boundsToUse.minZ
+    const fcenter = new THREE.Vector3(
+      (boundsToUse.minX + boundsToUse.maxX) / 2,
+      (boundsToUse.minY + boundsToUse.maxY) / 2,
+      (boundsToUse.minZ + boundsToUse.maxZ) / 2
+    )
+    fullBox = (
+      <mesh position={[fcenter.x, fcenter.y, fcenter.z]}>
+        <boxGeometry args={[fw, fh, fd]} />
+        <meshBasicMaterial color="grey" wireframe opacity={0.2} transparent />
+      </mesh>
+    )
+  }
+
+  // determine grid size from raw bounds
+  let grid = null
+  let axisLabels = null
+  let floorY = 0
+  if (rawBounds) {
+    floorY = rawBounds.minY
+    const size = Math.max(rawBounds.maxX - rawBounds.minX, rawBounds.maxY - rawBounds.minY, rawBounds.maxZ - rawBounds.minZ) * 1.5
+    grid = <gridHelper args={[size, 10, '#888', '#444']} position={[0, floorY, 0]} />
+    // generate ruler-style ticks along edges rather than only endpoints
+    const offset = size * 0.02
+    // grid-based ticks rather than data bounds
+    const half = size / 2
+    // use same spacing as grid subdivisions
+    const step = size / grid.props.args[1] // grid size divided by subdivisions (e.g., 10) gives step spacing
+    const ticks: JSX.Element[] = []
+    // x-axis ticks along front edge (z = -half)
+    for (let x = -half; x <= half + 1e-6; x += step) {
+      ticks.push(
+        <Text
+          key={"x"+x}
+          position={[x, floorY, (-half - offset) - 0.015]}
+          rotation={[Math.PI / 2, Math.PI, Math.PI / 2]} // lay flat with correct orientation along X
+          fontSize={size * 0.035}
+          color="#000"
+          anchorX="center"
+          anchorZ="center"
+        >
+          {x.toFixed(2)}
+        </Text>
+      )
+    }
+    // z-axis ticks along left edge (x = -half)
+    for (let z = -half; z <= half + 1e-6; z += step) {
+      ticks.push(
+        <Text
+          key={"z"+z}
+          position={[(-half - offset) - 0.015, floorY, z]}
+          rotation={[Math.PI / 2, Math.PI, Math.PI]} // lay flat and rotate within plane to align with Z
+          fontSize={size * 0.035}
+          color="#000"
+          anchorZ="center"
+          anchorX="center"
+        >
+          {z.toFixed(2)}
+        </Text>
+      )
+    }
+    // Y label at origin corner
+    ticks.push(
+      <Text
+        key="ylabel"
+        position={[-half - offset, floorY + offset, -half - offset]}
+        fontSize={size * 0.04}
+        color="#000"
+        anchorY="bottom"
+        anchorX="right"
+        anchorZ="front"
+      >
+        Y={floorY.toFixed(2)}
+      </Text>
+    )
+    axisLabels = <>{ticks}</>
+  }
+
   return (
-    <points ref={pointsRef} geometry={geometry}>
-      {/* Blue points with fixed size in screen space */}
-      <pointsMaterial size={0.02} sizeAttenuation color={0x4488ff} />
-    </points>
+    <group ref={groupRef}>
+      {grid}
+      {axisLabels}
+      <points geometry={geometry}>
+        {/* Blue points with fixed size in screen space */}
+        <pointsMaterial size={0.02} sizeAttenuation color={0x4488ff} />
+      </points>
+      {cropMesh}
+      {fullBox}
+      {/* always show axes for orientation */}
+      {rawBounds && <axesHelper position={[0, floorY, 0]} args={[Math.max(rawBounds.maxX - rawBounds.minX, rawBounds.maxY - rawBounds.minY, rawBounds.maxZ - rawBounds.minZ) * 0.6]} />}
+    </group>
   )
 }
 
@@ -115,7 +253,7 @@ function DepthImageViewer({ data }: PointCloudProps) {
  * Main Scene Component
  * @param lidarData - LiDAR data (point-cloud or image) to render, or null for fallback
  */
-export default function Scene({ lidarData }: { lidarData: LiDARData | null }) {
+export default function Scene({ lidarData, crop, fullBounds }: { lidarData: LiDARData | null; crop?: CropBox; fullBounds?: CropBox | null }) {
   return (
     <Canvas camera={{ position: [0, 0, 2] }}>
       {/* Ambient light for overall illumination */}
