@@ -59,11 +59,56 @@ export function classifyPointCloud(points: Array<[number, number, number]>): Lim
   const densityBoost = Math.min(0.15, Math.log10(Math.max(1, points.length)) / 10);
   confidence = Math.min(1, confidence + densityBoost);
 
-  return {
+  const result: LimbClass = {
     label,
     confidence: Number(confidence.toFixed(2)),
     bboxMeters: { length: Number(lengthM.toFixed(3)), width: Number(widthM.toFixed(3)), depth: Number(depthM.toFixed(3)) },
     points: points.length,
+  };
+  return result;
+}
+
+/**
+ * Simple measurement utility for a point-cloud
+ * returns length/width/depth in meters plus bounding-box volume
+ */
+export function measurePointCloud(points: Array<[number, number, number]>): {
+  length: number;
+  width: number;
+  depth: number;
+  volume: number;
+  bboxMeters: { length: number; width: number; depth: number };
+} {
+  if (!points || points.length === 0) {
+    return { length: 0, width: 0, depth: 0, volume: 0, bboxMeters: { length: 0, width: 0, depth: 0 } };
+  }
+
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (const [x, y, z] of points) {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z;
+    if (z > maxZ) maxZ = z;
+  }
+  const dx = maxX - minX;
+  const dy = maxY - minY;
+  const dz = maxZ - minZ;
+  const longest = Math.max(dx, dy, dz);
+  let scale = 1;
+  if (longest > 5) scale = 1000;
+  const lengthM = longest / scale;
+  const widthM = Math.min(dx, dy, dz) / scale;
+  const depthM = [dx, dy, dz].sort((a,b)=>a-b)[1] / scale;
+  const volume = (dx/scale) * (dy/scale) * (dz/scale);
+  return {
+    length: Number(lengthM.toFixed(3)),
+    width: Number(widthM.toFixed(3)),
+    depth: Number(depthM.toFixed(3)),
+    volume: Number(volume.toFixed(6)),
+    bboxMeters: { length: lengthM, width: widthM, depth: depthM },
   };
 }
 
@@ -73,4 +118,40 @@ export function classifyPointCloud(points: Array<[number, number, number]>): Lim
  */
 export function classifyFromImage(width: number, height: number): LimbClass {
   return { label: 'unknown (image)', confidence: 0.2, bboxMeters: { length: width, width: height, depth: 0 }, points: 0 };
+}
+
+// --- unit conversion helpers ------------------------------------------------
+
+/**
+ * Convert meters to feet (linear)
+ */
+export function metersToFeet(m: number): number {
+  return m * 3.28084;
+}
+
+/**
+ * Convert cubic meters to cubic feet (volume)
+ */
+export function cubicMetersToCubicFeet(m3: number): number {
+  return m3 * 35.3147;
+}
+
+/**
+ * Given raw metric measurements, convert to the requested system.
+ * `unit` is either 'metric' or 'imperial'.
+ * Returns a new object with the same fields, converted and rounded.
+ */
+export function convertMeasurements(
+  m: { length: number; width: number; depth: number; volume: number },
+  unit: 'metric' | 'imperial'
+) {
+  if (unit === 'metric') {
+    return m;
+  }
+  return {
+    length: Number((metersToFeet(m.length)).toFixed(3)),
+    width: Number((metersToFeet(m.width)).toFixed(3)),
+    depth: Number((metersToFeet(m.depth)).toFixed(3)),
+    volume: Number((cubicMetersToCubicFeet(m.volume)).toFixed(6)),
+  };
 }
